@@ -140,6 +140,22 @@ def test_metrics_computed_from_orders():
     assert sum(d["amount"] for d in data["trend"])==pytest.approx(data["sales"])
 
 
+def test_metrics_use_store_day_across_utc_midnight(monkeypatch):
+    from datetime import datetime, timezone
+    import backend.services as services
+    class FixedClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value=cls(2026,9,18,17,tzinfo=timezone.utc)
+            return value.astimezone(tz) if tz else value.replace(tzinfo=None)
+    monkeypatch.setattr(services,'datetime',FixedClock)
+    orders=[{'date':day,'status':'待发货','amount':10,'productId':'P-TEST'} for day in ('2026-09-18','2026-09-19','2026-09-20')]
+    monkeypatch.setattr(services,'read_records',lambda actor,kind: orders if kind=='order' else [])
+    data=services.analytics(SELLER,days=1)
+    assert data['trend']==[{'date':'2026-09-19','amount':10.0}]
+    assert data['orderCount']==1
+
+
 def test_ticket_close_does_not_refund():
     p=action(SELLER,"close_ticket","TK-P6X9C2",{"note":"人工已记录诉求"})
     decide(SELLER,p["id"],True)

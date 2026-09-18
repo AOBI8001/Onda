@@ -54,8 +54,9 @@ def analytics(actor, days=30):
         fail(403,"仅商家可查看经营数据")
     days = max(1,min(90,int(days)))
     orders = read_records(actor,"order")
-    cutoff = date.today() - timedelta(days=days-1)
-    selected = [o for o in orders if cutoff.isoformat() <= o["date"] <= date.today().isoformat()]
+    today = datetime.now(timezone(timedelta(hours=8))).date()
+    cutoff = today - timedelta(days=days-1)
+    selected = [o for o in orders if cutoff.isoformat() <= o["date"] <= today.isoformat()]
     paid = [o for o in selected if o["status"] != "已取消"]
     total = sum(Decimal(str(o["amount"])) for o in paid)
     counts = Counter()
