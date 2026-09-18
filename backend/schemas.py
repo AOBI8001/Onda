@@ -10,7 +10,7 @@ class Actor(BaseModel):
 
 class ActionInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    action: Literal["cancel_order", "request_refund", "approve_refund", "reject_refund", "ship_order", "edit_product", "set_product_status", "close_ticket", "update_ticket"]
+    action: Literal["cancel_order", "request_refund", "approve_refund", "reject_refund", "ship_order", "edit_product", "set_product_status", "close_ticket", "update_ticket", "plan_restock"]
     target: str = Field(min_length=1, max_length=80)
     params: dict = Field(default_factory=dict)
     expected_version: int | None = None

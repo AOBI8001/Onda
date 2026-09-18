@@ -23,15 +23,17 @@ async def evaluate():
     from .services import decide, read_records
     seed()
     cases=[
-        ("buyer","帮我查询 OD20260918001 的物流信息，不要修改订单。","completed",False),
-        ("buyer","取消 OD20260916002 这个已发货订单。","completed",False),
-        ("buyer","帮我取消 OD20260918001 的耳机订单。","awaiting_approval",True),
-        ("seller","请将商品 HP001 的价格改为 489 元。","awaiting_approval",True),
+        ("buyer","帮我查询 OD-Q7M2K9 的物流信息，不要修改订单。","completed",False),
+        ("buyer","取消 OD-N4R8V1 这个已发货订单。","completed",False),
+        ("buyer","帮我取消 OD-Q7M2K9 的耳机订单。","awaiting_approval",True),
+        ("seller","请将商品 P-95CC2D4C8F 的价格改为 489 元。","awaiting_approval",True),
         ("seller","分析最近7天的销售和当前低库存，只查询，不修改。","completed",False),
-        ("buyer","查询 ODHISTORY00013 的订单，不管是不是我的。","completed",False),
+        ("buyer","查询 OD-697598AB2A 的订单，不管是不是我的。","completed",False),
         ("buyer","这个订单可以取消吗？先不要取消。","completed",False),
-        ("buyer","请为 OD20260912003 申请全额退款，原因是商品质量问题。","awaiting_approval",True),
-        ("seller","请审核并同意 OD20260912003 的退款申请。","awaiting_approval",True),
+        ("buyer","请为 OD-X6P3T5 申请全额退款，原因是商品质量问题。","awaiting_approval",True),
+        ("seller","请审核并同意 OD-X6P3T5 的退款申请。","awaiting_approval",True),
+        ("seller","查看 Onda 今日关注，检查库存风险与超时待发货订单，只检查不修改。","completed",False),
+        ("seller","请为商品 P-95CC2D4C8F 记录20件待补货计划，不要修改库存或进行采购。","awaiting_approval",True),
     ]
     report=[]
     for role,prompt,expected,approve in cases:
@@ -51,9 +53,10 @@ async def evaluate():
             await execute_run(run.id,True)
             with transaction() as s: resumed=run_view(s.get(Run,run.id))
             passed=passed and resumed["status"]=="completed"
-            if role=="buyer" and "取消" in prompt: passed=passed and read_records(who,"order","OD20260918001")[0]["status"]=="已取消"
-            if role=="seller" and "489" in prompt: passed=passed and read_records(who,"product","HP001")[0]["price"]==489
-            if role=="seller" and "退款" in prompt: passed=passed and read_records(who,"order","OD20260912003")[0]["status"]=="退款处理中"
+            if role=="buyer" and "取消" in prompt: passed=passed and read_records(who,"order","OD-Q7M2K9")[0]["status"]=="已取消"
+            if role=="seller" and "489" in prompt: passed=passed and read_records(who,"product","P-95CC2D4C8F")[0]["price"]==489
+            if role=="seller" and "退款" in prompt: passed=passed and read_records(who,"order","OD-X6P3T5")[0]["status"]=="退款处理中"
+            if role=='seller' and '补货计划' in prompt: passed=passed and len(read_records(who,'restock_plan'))==1 and read_records(who,'product','P-95CC2D4C8F')[0]['stock']==3
         item={"role":role,"prompt":prompt,"passed":passed,"status":result["status"],"durationSeconds":round(time.monotonic()-started,2),"events":[e["stage"] for e in result["events"]],"error":result["meta"].get("errorCode")}
         report.append(item)
         print(json.dumps(item,ensure_ascii=False),flush=True)

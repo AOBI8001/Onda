@@ -42,8 +42,9 @@ import "./styles.css";
 import { api } from "./api";
 import { LiveAgent } from "./LiveAgent";
 import { DataDashboard } from "./DataDashboard";
+import { Catalog, ProductImage, Pagination } from "./Catalog";
 
-const assets = import.meta.glob("../素材图/*.png", {
+const assets = import.meta.glob("../素材图/入口页.png", {
   eager: true,
   query: "?url",
   import: "default",
@@ -188,7 +189,7 @@ function App() {
   const [loadError, setLoadError] = useState("");
   const activeRole = useRef(role);
   activeRole.current = role;
-  const [cart, setCart] = useSaved("onda-cart-v1", []);
+  const [cart, setCart] = useSaved("onda-cart-v2", []);
   const refresh = async () => {
     try {
       const result = await api(role, "/state");
@@ -345,6 +346,7 @@ function App() {
     openProduct,
     addCart,
     globalSearch,
+    setGlobalSearch,
   };
   return (
     <>
@@ -457,20 +459,11 @@ function App() {
                 </div>
               )}
               {page === "home" && seller && (
-                <DataDashboard
-                  analytics={business.analytics}
-                  products={products}
-                  tickets={tickets}
-                  go={go}
-                />
+                <DataDashboard analytics={business.analytics} {...core} />
               )}
               {page === "orders" && seller && <SellerOrders {...core} />}
               {page === "products" &&
-                (seller ? (
-                  <SellerProducts {...core} />
-                ) : (
-                  <BuyerProducts {...core} />
-                ))}
+                (seller ? <SellerProducts {...core} /> : <Catalog {...core} />)}
               {page === "tickets" && seller && <TicketPage {...core} />}
               {page === "agent" && (
                 <LiveAgent
@@ -526,24 +519,45 @@ function App() {
         >
           {modal.kind === "product" && (
             <div className="product-detail">
-              <Crop source={modal.product.source} rect={modal.product.crop} />
+              <ProductImage product={modal.product} />
               <div className="detail-body">
-                <Badge>精选好物</Badge>
+                <Badge>{modal.product.brand || modal.product.category}</Badge>
                 <h2>{modal.product.name}</h2>
                 <p className="muted">{modal.product.desc}</p>
                 <strong className="detail-price">
                   {money(modal.product.price)}
                 </strong>
-                <p>简约设计，用心陪伴每一天。</p>
-                <div className="detail-benefits">
-                  <span>
-                    <Truck size={17} /> 包邮配送
-                  </span>
-                  <span>
-                    <ShieldCheck size={17} /> 售后保障
-                  </span>
+                <ul className="product-features">
+                  {modal.product.features?.map((f) => (
+                    <li key={f}>{f}</li>
+                  ))}
+                </ul>
+                <div className="product-provenance">
+                  {modal.product.sourceUrl && (
+                    <>
+                      <a
+                        href={modal.product.sourceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        查看品牌商品来源 <ExternalLink size={14} />
+                      </a>
+                      <p>
+                        来源报价：US$ {modal.product.sourcePrice} ·{" "}
+                        {new Date(
+                          modal.product.sourceCapturedAt,
+                        ).toLocaleDateString("zh-CN")}
+                      </p>
+                      <p>规格选项：{modal.product.sourceVariant}</p>
+                      <small>{modal.product.priceBasis}</small>
+                    </>
+                  )}
+                  <p>当前库存：{modal.product.stock} 件</p>
                 </div>
-                <Btn onClick={() => addCart(modal.product)}>
+                <Btn
+                  disabled={!modal.product.stock}
+                  onClick={() => addCart(modal.product)}
+                >
                   <ShoppingBag size={17} />
                   加入购物袋
                 </Btn>
@@ -556,7 +570,7 @@ function App() {
                 {cart.length ? (
                   cart.map((p) => (
                     <div className="cart-item" key={p.id}>
-                      <Crop source={p.source} rect={p.crop} />
+                      <ProductImage product={p} />
                       <div>
                         <strong>{p.name}</strong>
                         <p>
@@ -614,7 +628,7 @@ function App() {
                         {a.role}确认 · {a.date}
                       </p>
                     </div>
-                    <Badge>已完成</Badge>
+                    <Badge>{a.status || "已完成"}</Badge>
                   </div>
                 ))
               ) : (
@@ -729,200 +743,6 @@ function Landing() {
   );
 }
 
-function Hero({ seller = false, compact = false, onAction }) {
-  return (
-    <section
-      className={`hero ${seller ? "seller-hero" : ""} ${compact ? "compact-hero" : ""}`}
-    >
-      <Crop
-        source={
-          seller
-            ? "商家首页.png"
-            : compact
-              ? "消费者商品页.png"
-              : "消费者首页.png"
-        }
-        rect={
-          seller
-            ? [71, 74, 1530, 263]
-            : compact
-              ? [80, 71, 1512, 234]
-              : [71, 74, 1530, 359]
-        }
-        className="hero-scene"
-      />
-      <div className="hero-overlay" />
-      <div className="hero-content">
-        <p className="eyebrow">
-          {seller ? "FOR A BETTER BUSINESS" : "BETTER CHOICES"}
-          <br />
-          {seller ? "A BRIGHTER TOMORROW" : "A BRIGHTER EVERYDAY"}
-        </p>
-        <h1>
-          {seller ? (
-            "与 Onda 一起，让好产品走向更多美好生活"
-          ) : compact ? (
-            "让美好生活触手可及"
-          ) : (
-            <>
-              更聪明的购物
-              <br />
-              让美好生活更简单
-            </>
-          )}
-        </h1>
-        <p>
-          {seller
-            ? "简单、高效、可靠的商家服务平台"
-            : compact
-              ? "在 Onda，发现更多适合你的好物"
-              : "在 Onda，发现更适合你的好物"}
-        </p>
-        {!compact && (
-          <Btn onClick={onAction}>
-            {seller ? "用好产品，点亮更多日常" : "开启美好生活"}{" "}
-            <ArrowRight size={18} />
-          </Btn>
-        )}
-      </div>
-    </section>
-  );
-}
-function ProductCard({ product: p, onClick, onCart, compact = false }) {
-  return (
-    <article className={`product-card ${compact ? "recommend-product" : ""}`}>
-      <button
-        className="product-image"
-        onClick={() => onClick(p)}
-        aria-label={`查看${p.name}`}
-      >
-        <Crop source={p.source} rect={p.crop} />
-      </button>
-      <div className="product-card-body">
-        <button className="product-name" onClick={() => onClick(p)}>
-          {p.name}
-        </button>
-        <p>{p.desc}</p>
-        <strong>{money(p.price)}</strong>
-        {p.tags && (
-          <div className="tags">
-            {p.tags.map((t) => (
-              <span key={t}>{t}</span>
-            ))}
-          </div>
-        )}
-        {compact ? (
-          <button className="detail-link" onClick={() => onClick(p)}>
-            查看详情 <ArrowRight size={14} />
-          </button>
-        ) : (
-          onCart && (
-            <button
-              className="cart-add"
-              aria-label={`将${p.name}加入购物袋`}
-              onClick={() => onCart(p)}
-            >
-              <ShoppingCart size={18} />
-            </button>
-          )
-        )}
-      </div>
-    </article>
-  );
-}
-function BuyerProducts({ products, globalSearch, openProduct, addCart }) {
-  const [category, setCategory] = useState("全部"),
-    [price, setPrice] = useState("全部"),
-    [sort, setSort] = useState("默认排序");
-  let filtered = products.filter(
-    (p) =>
-      p.status === "在售" &&
-      (category === "全部" || p.category === category) &&
-      (!globalSearch ||
-        p.name.includes(globalSearch) ||
-        p.id.toLowerCase().includes(globalSearch.toLowerCase())) &&
-      (price === "全部" ||
-        (price === "¥ 0 - 199" && p.price <= 199) ||
-        (price === "¥ 200 - 499" && p.price >= 200 && p.price <= 499) ||
-        (price === "¥ 500 以上" && p.price >= 500)),
-  );
-  filtered = [...filtered].sort((a, b) =>
-    sort === "价格从低到高"
-      ? a.price - b.price
-      : sort === "价格从高到低"
-        ? b.price - a.price
-        : sort === "销量优先"
-          ? b.sales - a.sales
-          : 0,
-  );
-  return (
-    <>
-      <Hero compact />
-      <div className="catalog-layout">
-        <aside className="filter-card card">
-          <h3>
-            分类 <ChevronDown size={17} />
-          </h3>
-          {categories.map((c) => (
-            <button
-              className={category === c ? "selected" : ""}
-              key={c}
-              onClick={() => setCategory(c)}
-            >
-              {c}
-            </button>
-          ))}
-          <div className="filter-divider" />
-          <h3>
-            价格 <ChevronDown size={17} />
-          </h3>
-          {["全部", "¥ 0 - 199", "¥ 200 - 499", "¥ 500 以上"].map((p) => (
-            <label className="radio-row" key={p}>
-              <input
-                type="radio"
-                name="price"
-                checked={price === p}
-                onChange={() => setPrice(p)}
-              />
-              {p}
-            </label>
-          ))}
-        </aside>
-        <section className="catalog-results">
-          <div className="catalog-toolbar">
-            <span>共 {filtered.length} 件商品</span>
-            <select
-              aria-label="商品排序"
-              value={sort}
-              onChange={(e) => setSort(e.target.value)}
-            >
-              {["默认排序", "价格从低到高", "价格从高到低", "销量优先"].map(
-                (x) => (
-                  <option key={x}>{x}</option>
-                ),
-              )}
-            </select>
-          </div>
-          {filtered.length ? (
-            <div className="catalog-grid">
-              {filtered.map((p) => (
-                <ProductCard
-                  key={p.id}
-                  product={p}
-                  onClick={openProduct}
-                  onCart={addCart}
-                />
-              ))}
-            </div>
-          ) : (
-            <Empty />
-          )}
-        </section>
-      </div>
-    </>
-  );
-}
-
 function SellerProducts({
   products,
   createProduct,
@@ -936,7 +756,8 @@ function SellerProducts({
     [category, setCategory] = useState("全部分类"),
     [price, setPrice] = useState("价格区间"),
     [sort, setSort] = useState("更新时间"),
-    [selected, setSelected] = useState([]);
+    [selected, setSelected] = useState([]),
+    [pageNumber, setPageNumber] = useState(1);
   const filtered = products
     .filter(
       (p) =>
@@ -956,6 +777,13 @@ function SellerProducts({
           ? a.stock - b.stock
           : 0,
     );
+  const totalPages = Math.max(1, Math.ceil(filtered.length / 12));
+  const activePage = Math.min(pageNumber, totalPages);
+  const shown = filtered.slice((activePage - 1) * 12, activePage * 12);
+  useEffect(
+    () => setPageNumber(1),
+    [tab, search, category, price, sort, globalSearch],
+  );
   return (
     <>
       <div className="page-heading">
@@ -1080,7 +908,7 @@ function SellerProducts({
             </tr>
           </thead>
           <tbody>
-            {filtered.map((p, i) => (
+            {shown.map((p, i) => (
               <tr key={p.id}>
                 <td>
                   <input
@@ -1098,7 +926,7 @@ function SellerProducts({
                 </td>
                 <td>
                   <div className="table-product">
-                    <Crop source={p.source} rect={p.crop} />
+                    <ProductImage product={p} />
                     <div>
                       <strong>{p.name}</strong>
                       <small>
@@ -1155,15 +983,11 @@ function SellerProducts({
       </div>
       <div className="table-footer">
         <span>共 {filtered.length} 件商品</span>
-        <div className="pagination">
-          <button disabled aria-label="上一页">
-            <ChevronLeft size={16} />
-          </button>
-          <button className="active">1</button>
-          <button disabled aria-label="下一页">
-            <ChevronRight size={16} />
-          </button>
-        </div>
+        <Pagination
+          page={activePage}
+          total={totalPages}
+          onChange={setPageNumber}
+        />
       </div>
     </>
   );
@@ -1179,7 +1003,8 @@ function SellerOrders({
 }) {
   const [status, setStatus] = useState("全部"),
     [search, setSearch] = useState(""),
-    [current, setCurrent] = useState(null);
+    [current, setCurrent] = useState(null),
+    [orderPage, setOrderPage] = useState(1);
   const [tracking, setTracking] = useState(""),
     [shippedAt, setShippedAt] = useState("");
   const order = orders.find((o) => o.id === current);
@@ -1192,6 +1017,9 @@ function SellerOrders({
         .toLowerCase()
         .includes((search || globalSearch).trim().toLowerCase()),
   );
+  const orderPages = Math.max(1, Math.ceil(filtered.length / 12));
+  const activeOrderPage = Math.min(orderPage, orderPages);
+  useEffect(() => setOrderPage(1), [status, search, globalSearch]);
   const open = (o) => {
     setCurrent(o.id);
     setTracking(o.tracking === "—" ? "" : o.tracking);
@@ -1289,31 +1117,40 @@ function SellerOrders({
               </tr>
             </thead>
             <tbody>
-              {filtered.map((o) => (
-                <tr key={o.id}>
-                  <td>
-                    <strong>{o.id}</strong>
-                    <small>{o.date}</small>
-                  </td>
-                  <td>{productName(o)}</td>
-                  <td className="order-money">{money(o.amount)}</td>
-                  <td>
-                    <Badge>{o.status}</Badge>
-                  </td>
-                  <td>{o.tracking}</td>
-                  <td>{o.shippedAt}</td>
-                  <td>
-                    <button className="text-button" onClick={() => open(o)}>
-                      查看详情 <ChevronRight size={14} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {filtered
+                .slice((activeOrderPage - 1) * 12, activeOrderPage * 12)
+                .map((o) => (
+                  <tr key={o.id}>
+                    <td>
+                      <strong>{o.id}</strong>
+                      <small>{o.date}</small>
+                    </td>
+                    <td>{productName(o)}</td>
+                    <td className="order-money">{money(o.amount)}</td>
+                    <td>
+                      <Badge>{o.status}</Badge>
+                    </td>
+                    <td>{o.tracking}</td>
+                    <td>{o.shippedAt}</td>
+                    <td>
+                      <button className="text-button" onClick={() => open(o)}>
+                        查看详情 <ChevronRight size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>
         {!filtered.length && <Empty text="没有符合条件的订单" />}
-        <div className="order-table-footer">共 {filtered.length} 条订单</div>
+        <div className="order-table-footer">
+          共 {filtered.length} 条订单
+          <Pagination
+            page={activeOrderPage}
+            total={orderPages}
+            onChange={setOrderPage}
+          />
+        </div>
       </section>
       {order && (
         <Modal title="订单详情" onClose={() => setCurrent(null)}>
@@ -1761,13 +1598,9 @@ function Account({ orders, products, orderAction, go }) {
                 <Badge>{o.status}</Badge>
               </div>
               <div className="order-body">
-                {p.crop ? (
-                  <Crop source={p.source} rect={p.crop} />
-                ) : (
-                  <span className="default-avatar">
-                    <Package size={28} />
-                  </span>
-                )}
+                <ProductImage
+                  product={{ ...p, image: p.image || o.productImage }}
+                />
                 <div>
                   <h3>{p.name}</h3>
                   <p className="muted">数量 1 · {p.desc}</p>
@@ -1925,6 +1758,7 @@ function ApprovalModal({ data, onClose, onConfirm }) {
                   status: "状态",
                   price: "价格",
                   stock: "库存",
+                  plannedQuantity: "计划补货数量",
                   tracking: "物流单号",
                   shippedAt: "发货日期",
                   name: "商品名称",

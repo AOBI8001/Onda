@@ -96,6 +96,12 @@ def get_analytics(days:int=30,who:Actor=Depends(actor)): return services.analyti
 def new_product(data:ProductInput,who:Actor=Depends(actor)): return services.create_product(who,data)
 
 
+@app.post("/api/inspections")
+async def inspect_business(force:bool=False,who:Actor=Depends(actor)):
+    from .inspections import check
+    return await check(who,force)
+
+
 @app.post("/api/proposals")
 def new_proposal(data:ActionInput,who:Actor=Depends(actor)): return services.propose(who,data)
 

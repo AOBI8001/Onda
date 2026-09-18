@@ -108,6 +108,14 @@ class Audit(Base):
     created: Mapped[str] = mapped_column(String(40), default=now)
 
 
+class Inspection(Base):
+    __tablename__ = "merchant_inspections"
+    merchant: Mapped[str] = mapped_column(String(80), primary_key=True)
+    signature: Mapped[str] = mapped_column(String(64))
+    checked_at: Mapped[str] = mapped_column(String(40))
+    report: Mapped[dict] = mapped_column(JSON)
+
+
 class Feedback(Base):
     __tablename__ = "feedback"
     id: Mapped[str] = mapped_column(String(80), primary_key=True)

@@ -57,14 +57,18 @@ def tools_for(actor, run_id):
         return encode(result)
 
     @function_tool(strict_mode=False)
-    async def search_products(query: str = "", max_price: float = 100000) -> str:
-        """按商品名称、描述或类别查找商品。预算为最高单价。空关键词查询所有可访问商品。"""
-        return record("查询商品与库存",[p for p in read_records(actor,"product",query) if p["price"] <= max_price][:30])
+    async def search_products(query: str = "", max_price: float = 100000, offset: int = 0) -> str:
+        """按名称、型号、品牌或类别查询真实商品目录。最高单价为人民币项目售价。空关键词查全部；每页20条，nextOffset用于下一页。来源美元报价不是人民币售价。"""
+        items=[p for p in read_records(actor,"product",query) if p["price"] <= max_price]
+        offset=max(0,offset)
+        fields=('id','name','desc','features','brand','category','price','currency','stock','status','version','sourceUrl','sourcePrice','sourceCurrency','priceBasis')
+        return record("查询商品与库存",{'total':len(items),'items':[{k:p[k] for k in fields if k in p} for p in items[offset:offset+20]],'nextOffset':offset+20 if offset+20<len(items) else None})
 
     @function_tool(strict_mode=False)
-    async def lookup_orders(query: str = "") -> str:
-        """查询有权访问的订单和物流；支持订单号、商品名、状态。不得猜测订单对象。"""
-        return record("查询订单与物流",read_records(actor,"order",query)[:80])
+    async def lookup_orders(query: str = "", offset: int = 0) -> str:
+        """查询有权访问的订单和物流，支持订单号、商品名、状态。每页30条，nextOffset用于下一页。不得猜测对象。"""
+        items=read_records(actor,'order',query);offset=max(0,offset)
+        return record('查询订单与物流',{'total':len(items),'items':items[offset:offset+30],'nextOffset':offset+30 if offset+30<len(items) else None})
 
     @function_tool(strict_mode=False)
     async def lookup_policy(query: str = "") -> str:
@@ -80,12 +84,21 @@ def tools_for(actor, run_id):
     @function_tool(strict_mode=False)
     async def sales_overview(days: int = 30) -> str:
         """商家专用：查询最近 1~90 天销售额、订单、热销商品、低库存和待处理工单。"""
-        return record("计算核心经营指标",analytics(actor,days))
+        result=analytics(actor,days)
+        result['topProducts']=[{k:p[k] for k in ('id','name','price','sales','stock')} for p in result['topProducts'][:10]]
+        result['lowStock']=[{k:p[k] for k in ('id','name','price','stock')} for p in result['lowStock']]
+        return record("计算核心经营指标",result)
+
+    @function_tool(strict_mode=False)
+    async def inspect_operations() -> str:
+        """商家专用，只读自动巡检：库存覆盖、超时发货、销售趋势，返回有证据的今日关注和可审核补货建议。"""
+        from .inspections import check
+        return record('读取今日经营巡检',await check(actor))
 
     @function_tool(strict_mode=False)
     async def propose_change(action: str, target: str, params_json: str = "{}") -> str:
-        """仅为用户明确要求的修改生成待人工确认方案。action: cancel_order/request_refund/approve_refund/reject_refund/ship_order/edit_product/set_product_status/close_ticket/update_ticket。
-        target 必须是查询到的完整业务 ID。params_json: 取消和同意退款{}；申请/拒绝退款{"reason":"原因"}；发货{"tracking":"单号","shippedAt":"日期时间"}；商品修改可用 name/desc/price/stock/category；上下架{"status":"在售或下架"}；工单{"note":"处理说明"}。生成方案不代表已执行。
+        """仅为用户明确要求的修改生成待人工确认方案。action: cancel_order/request_refund/approve_refund/reject_refund/ship_order/edit_product/set_product_status/close_ticket/update_ticket/plan_restock。
+        target 必须是查询到的完整业务 ID。params_json: 取消和同意退款{}；申请/拒绝退款{"reason":"原因"}；发货{"tracking":"单号","shippedAt":"日期时间"}；商品修改可用 name/desc/price/stock/category；上下架{"status":"在售或下架"}；工单{"note":"处理说明"}；补货计划{"quantity":正整数}，只记录计划、不改变库存、不采购。生成方案不代表已执行。
         """
         try:
             payload=ActionInput(action=action,target=target,params=json.loads(params_json))
@@ -114,7 +127,7 @@ def tools_for(actor, run_id):
             return encode({"error":e.detail})
 
     result=[search_products,lookup_orders,lookup_policy,lookup_tickets,propose_change,open_support_ticket]
-    if actor.role=="seller": result.append(sales_overview)
+    if actor.role=="seller": result.extend([sales_overview,inspect_operations])
     else: result.append(confirm_proposal)
     return result
 

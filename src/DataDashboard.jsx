@@ -7,8 +7,17 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { api } from "./api";
+import { TodayAttention } from "./TodayAttention";
 
-export function DataDashboard({ analytics, products, tickets, go }) {
+export function DataDashboard({
+  analytics,
+  products,
+  orders,
+  tickets,
+  go,
+  requestApproval,
+  setGlobalSearch,
+}) {
   const [days, setDays] = useState(30),
     [data, setData] = useState(analytics),
     [error, setError] = useState("");
@@ -69,6 +78,13 @@ export function DataDashboard({ analytics, products, tickets, go }) {
         <span className="badge blue">近 {days} 天</span>
       </div>
       {error && <p className="api-error">{error}</p>}
+      <TodayAttention
+        products={products}
+        orders={orders}
+        go={go}
+        requestApproval={requestApproval}
+        setGlobalSearch={setGlobalSearch}
+      />
       <div className="metric-grid">
         {[
           [BarChart3, "销售额", `¥ ${data.sales.toLocaleString("zh-CN")}`],
@@ -215,7 +231,7 @@ export function DataDashboard({ analytics, products, tickets, go }) {
             <div className="live-rank" key={p.id}>
               <span className={`rank-number rank-${i}`}>{i + 1}</span>
               <div>
-                <strong>{p.name}</strong>
+                <strong title={p.name}>{p.name}</strong>
                 <div className="rank-bar">
                   <span
                     style={{

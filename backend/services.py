@@ -17,6 +17,7 @@ from .policies import POLICY_VERSION
 from .schemas import ActionInput, Actor, ProductInput
 
 TITLES = {"cancel_order":"取消订单","request_refund":"申请退款","approve_refund":"同意退款申请","reject_refund":"拒绝退款申请","ship_order":"登记发货","edit_product":"修改商品信息","set_product_status":"调整商品上下架","close_ticket":"完成工单","update_ticket":"更新工单"}
+TITLES['plan_restock']='记录补货计划'
 
 
 def fail(status, message):
@@ -83,13 +84,17 @@ def validated_change(record, actor, action, params):
         fail(422,"不支持的操作")
     if actor.role == "buyer" and action not in ("cancel_order","request_refund"):
         fail(403,"当前角色无权执行此操作")
-    expected_kind = "product" if action in ("edit_product","set_product_status") else "ticket" if action in ("close_ticket","update_ticket") else "order"
+    expected_kind = "product" if action in ("edit_product","set_product_status","plan_restock") else "ticket" if action in ("close_ticket","update_ticket") else "order"
     if record.kind != expected_kind:
         fail(422,"操作与对象类型不匹配")
-    allowed = {"cancel_order":set(),"request_refund":{"reason"},"approve_refund":set(),"reject_refund":{"reason"},"ship_order":{"tracking","shippedAt"},"edit_product":{"name","desc","price","stock","category"},"set_product_status":{"status"},"close_ticket":{"note"},"update_ticket":{"note","status"}}[action]
+    allowed = {"cancel_order":set(),"request_refund":{"reason"},"approve_refund":set(),"reject_refund":{"reason"},"ship_order":{"tracking","shippedAt"},"edit_product":{"name","desc","price","stock","category"},"set_product_status":{"status"},"close_ticket":{"note"},"update_ticket":{"note","status"},"plan_restock":{"quantity"}}[action]
     if set(params) - allowed:
         fail(422,"操作包含不支持的参数")
-    if action == "cancel_order":
+    if action == "plan_restock":
+        quantity=params.get('quantity')
+        if isinstance(quantity,bool) or not isinstance(quantity,int) or not 1<=quantity<=10000: fail(422,'补货数量须为 1 至 10000 的整数')
+        if d['status']!='在售': fail(409,'仅为在售商品记录补货计划')
+    elif action == "cancel_order":
         if d["status"] != "待发货": fail(409,"只有待发货订单可以取消")
         d.update(status="已取消",fulfillmentStatus="已取消")
     elif action == "request_refund":
@@ -132,7 +137,7 @@ def validated_change(record, actor, action, params):
         if target not in ("待处理","处理中"):
             if action != "close_ticket": fail(422,"完成工单请使用完成操作")
         d.update(status=target,notes=[*d["notes"],{"text":note,"date":now()}])
-    if record.kind == "product": d["updatedAt"] = now()
+    if record.kind == "product" and action!='plan_restock': d["updatedAt"] = now()
     return d
 
 
@@ -146,8 +151,12 @@ def propose(actor: Actor, payload: ActionInput, run_id=None):
         if payload.expected_version is not None and record.version != payload.expected_version:
             fail(409,"数据已更新，请刷新后重新发起")
         updated = validated_change(record,actor,payload.action,payload.params)
+        if payload.action=='plan_restock':
+            plans=s.scalars(select(Record).where(Record.kind=='restock_plan',Record.merchant==actor.merchant)).all()
+            if any(p.data.get('productId')==record.id and p.data.get('status')=='待补货' for p in plans): fail(409,'该商品已有待补货计划，请先核对现有计划')
         p = Proposal(id=uid("AP-"),actor=actor.id,role=actor.role,merchant=actor.merchant,action=payload.action,target=record.id,version=record.version,params=payload.params,status="pending",expires=(datetime.now(timezone.utc)+timedelta(minutes=15)).isoformat(),run_id=run_id,result={"changes":{k:{"before":record.data.get(k),"after":v} for k,v in updated.items() if record.data.get(k)!=v},"policyVersion":POLICY_VERSION})
         s.add(p)
+        if payload.action=='plan_restock': p.result={**p.result,'changes':{'plannedQuantity':{'before':0,'after':payload.params['quantity']}}}
         s.flush()
         return proposal_view(p)
 
@@ -173,6 +182,10 @@ def decide(actor, proposal_id, approved):
         changed=validated_change(record,actor,p.action,p.params)
         done=s.execute(update(Record).where(Record.id==record.id,Record.version==p.version).values(data=changed,version=p.version+1).execution_options(synchronize_session=False))
         if done.rowcount != 1: fail(409,"数据发生并发更新，请重试")
+        if p.action=='plan_restock':
+            existing=s.scalars(select(Record).where(Record.kind=='restock_plan',Record.merchant==actor.merchant)).all()
+            if any(r.data.get('productId')==record.id and r.data.get('status')=='待补货' for r in existing): fail(409,'已有待补货计划，不可重复提交')
+            s.add(Record(id=uid('RP-'),kind='restock_plan',owner=actor.id,merchant=actor.merchant,data={'productId':record.id,'productName':record.data['name'],'quantity':p.params['quantity'],'status':'待补货','date':now(),'proposalId':p.id}))
         if p.action == "request_refund":
             s.add(Record(id=uid("RF-"),kind="refund",owner=record.owner,merchant=actor.merchant,data={"orderId":record.id,"amount":record.data["amount"],"reason":p.params.get("reason","用户申请退款"),"status":"待审核","date":now()}))
             s.add(Record(id=uid("WD-"),kind="ticket",owner=record.owner,merchant=actor.merchant,data={"user":"用户","phone":"—","type":"售后退款","description":p.params.get("reason","用户申请退款"),"orderId":record.id,"risk":"高","status":"待处理","date":now(),"notes":[]}))

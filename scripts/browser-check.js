@@ -23,8 +23,8 @@ async (page) => {
     const input = page.getByRole("textbox", { name: "给 Onda 发送消息" });
     await input.fill(
       role === "buyer"
-        ? "帮我取消 OD20260918001 的耳机订单。"
-        : "请将 HP001 的价格修改为489元。",
+        ? "帮我取消 OD-Q7M2K9 的耳机订单。"
+        : "请将 P-95CC2D4C8F 的价格修改为489元。",
     );
     await page.getByRole("button", { name: "发送消息", exact: true }).click();
     await page
@@ -74,7 +74,7 @@ async (page) => {
   await page.goto(base + "/#/buyer/account");
   await page.getByRole("heading", { name: "我的订单", exact: true }).waitFor();
   await page.getByRole("button", { name: "取消订单", exact: true }).waitFor();
-  await page.getByText("OD20260918001", { exact: false }).first().waitFor();
+  await page.getByText("OD-Q7M2K9", { exact: false }).first().waitFor();
   verify(
     (await page
       .getByRole("button", { name: "取消订单", exact: true })
@@ -82,4 +82,4 @@ async (page) => {
     "Buyer rejection preserved order",
   );
   return { passed: true, errors };
-};
+}

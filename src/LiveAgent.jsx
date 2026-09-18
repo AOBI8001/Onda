@@ -235,7 +235,7 @@ export function LiveAgent({ seller, requestApproval, refresh, setToast }) {
                       "查看待处理工单",
                     ]
                   : [
-                      "推荐300元以内适合送礼的香薰",
+                    "推荐300元以内适合送礼的数码配件",
                       "查询我的订单物流",
                       "帮我取消待发货的耳机订单",
                     ]

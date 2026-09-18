@@ -1,38 +1,56 @@
-"""Small reproducible fixtures; never read the original DataCo dataset."""
-from datetime import date, timedelta
+"""Real product catalog with synthetic, date-independent commerce fixtures."""
+import json
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from uuid import NAMESPACE_URL, uuid5
 from sqlalchemy import select
-from .db import Base, Record, engine, transaction
+from .db import Base, Record, engine, transaction, now
 
-PRODUCTS = [
-    ("HP001", "Onda 无线蓝牙耳机", "沉浸音质，静享生活", 499, 120, "生活电器", "在售", [383,368,382,165]),
-    ("CUP002", "Onda 保温随行杯", "一杯温暖，陪伴每一天", 229, 85, "居家日用", "在售", [788,369,383,164]),
-    ("BLANKET003", "Onda 轻柔云感毯", "柔软舒适，治愈日常", 299, 62, "居家日用", "在售", [383,636,382,155]),
-    ("LAMP004", "Onda 护眼桌面灯", "柔和之光，专注更久", 399, 8, "办公学习", "下架", [1197,369,394,164]),
-    ("KB005", "Onda 无线轻薄键盘", "流畅输入，灵感不停", 349, 50, "办公学习", "在售", [788,636,383,155]),
-    ("PLANT006", "Onda 治愈绿植盆栽", "一抹绿意，让空间更温柔", 199, 0, "居家日用", "草稿", [1197,636,394,155]),
-    ("SC001", "晨雾香氛机", "清新香调，简约设计", 259, 24, "居家日用", "在售", [568,405,226,148]),
-    ("SC002", "山野檀香香薰蜡烛", "自然木质香，礼盒包装", 189, 6, "居家日用", "在售", [809,405,227,148]),
-    ("SC003", "云屿无火香薰", "清新花果香，适合送礼", 269, 32, "居家日用", "在售", [1049,405,229,148]),
-]
+CATALOG=json.loads((Path(__file__).parent/'data'/'catalog.json').read_text(encoding='utf-8'))
+CORE_ORDERS=('OD-Q7M2K9','OD-N4R8V1','OD-X6P3T5')
+CORE_TICKETS=('TK-K8M2Q4','TK-N5V7R3','TK-P6X9C2','TK-H4J8W1')
+LOCAL=timezone(timedelta(hours=8))
+
+
+def stable_id(kind,key):
+    return kind+'-'+uuid5(NAMESPACE_URL,'onda:'+str(key)).hex[:10].upper()
+
+
+def product_data(product,index):
+    return {**{k:v for k,v in product.items() if k!='id'},'stock':(3 if index==0 else 0 if index==1 else 8 if index==3 else 25+index*7%90),'status':'在售','sales':0,'updatedAt':now(),'dataOrigin':'品牌商品资料；库存与订单为合成经营数据'}
+
+
+def order_data(product,age,status,index):
+    current=datetime.now(LOCAL)
+    when=(current-timedelta(days=age)).replace(hour=10,minute=0,second=0,microsecond=0)
+    if when>current: when=current-timedelta(minutes=15)
+    shipped=status not in ('待发货','已取消')
+    return {'productId':product['id'],'productName':product['name'],'productImage':product['image'],'quantity':1,'date':when.date().isoformat(),'createdAt':when.isoformat(),'amount':product['price'],'status':status,'fulfillmentStatus':status,'refundStatus':None,'tracking':stable_id('SF','shipment-'+str(index)) if shipped else '—','shippedAt':(when+timedelta(days=1)).strftime('%Y-%m-%d %H:%M') if shipped else '尚未发货'}
 
 
 def seed():
     Base.metadata.create_all(engine)
     with transaction() as s:
-        if s.scalar(select(Record.id).limit(1)):
-            return
-        for pid, name, desc, price, stock, category, status, crop in PRODUCTS:
-            s.add(Record(id=pid, kind="product", owner="seller-001", merchant="merchant-onda", data={"name":name,"desc":desc,"price":price,"stock":stock,"category":category,"status":status,"crop":crop,"source":"消费者Onda.png" if pid.startswith("SC") else "消费者商品页.png","sales":0}))
-        today = date.today()
+        existing=s.scalar(select(Record.id).limit(1))
+    if existing:
+        from .catalog_migration import migrate_legacy
+        migrate_legacy()
+        return
+    with transaction() as s:
+        for index,p in enumerate(CATALOG):
+            s.add(Record(id=p['id'],kind='product',owner='seller-001',merchant='merchant-onda',data=product_data(p,index)))
         for i in range(63):
-            core = i < 3
-            pid = PRODUCTS[i % len(PRODUCTS)][0]
-            age = [0,2,6][i] if core else 7 + i % 24
-            ordered = today - timedelta(days=age)
-            status = ["待发货","运输中","已签收"][i] if core else ("已取消" if i % 13 == 0 else "已签收")
-            oid = ["OD20260918001","OD20260916002","OD20260912003"][i] if core else f"ODHISTORY{i:05}"
-            shipped = status not in ("待发货","已取消")
-            s.add(Record(id=oid,kind="order",owner="buyer-001" if core else f"buyer-{i+2:03}",merchant="merchant-onda",data={"productId":pid,"productName":PRODUCTS[i % len(PRODUCTS)][1],"quantity":1,"date":ordered.isoformat(),"amount":PRODUCTS[i % len(PRODUCTS)][3],"status":status,"fulfillmentStatus":status,"refundStatus":None,"tracking":f"SF13800138{i:04}" if shipped else "—","shippedAt":f"{ordered + timedelta(days=1)} 10:30" if shipped else "尚未发货"}))
-        descriptions = [("物流配送","查询随行杯订单的物流进度。","OD20260916002","低"),("商品咨询","耳机怎么连接手机？","OD20260918001","低"),("售后退款","云感毯有质量问题，咨询售后处理。","OD20260912003","高"),("订单问题","耳机还没发货，咨询能否取消。","OD20260918001","高")]
+            if i<3:
+                p=CATALOG[i];age=(0,2,6)[i];status=('待发货','运输中','已签收')[i]
+            elif i<9:
+                p=CATALOG[i+8];age=i;status='待发货'
+            elif i<21:
+                p=CATALOG[3];age=1+i%7;status='已签收'
+            elif i<25:
+                p=CATALOG[3];age=8+i%7;status='已签收'
+            else:
+                p=CATALOG[0 if i%3==0 else (i*7)%100];age=1+i%28;status='已取消' if i%13==0 else '已签收'
+            s.add(Record(id=CORE_ORDERS[i] if i<3 else stable_id('OD','history-'+str(i)),kind='order',owner='buyer-001' if i<3 else f'buyer-{i+2:03}',merchant='merchant-onda',data=order_data(p,age,status,i)))
+        descriptions=[('物流配送','查询订单物流进度。',CORE_ORDERS[1],'低'),('商品咨询','耳机如何连接手机？',CORE_ORDERS[0],'低'),('售后退款','咨询商品质量问题与售后处理。',CORE_ORDERS[2],'高'),('订单问题','尚未发货，咨询能否取消。',CORE_ORDERS[0],'高')]
         for i,(kind,text,oid,risk) in enumerate(descriptions):
-            s.add(Record(id=f"WD2026091800{i+1}",kind="ticket",owner="buyer-001",merchant="merchant-onda",data={"user":"用户","phone":"—","type":kind,"description":text,"orderId":oid,"risk":risk,"status":"待处理","date":today.isoformat(),"notes":[]}))
+            s.add(Record(id=CORE_TICKETS[i],kind='ticket',owner='buyer-001',merchant='merchant-onda',data={'user':'用户','phone':'—','type':kind,'description':text,'orderId':oid,'risk':risk,'status':'待处理','date':now(),'notes':[]}))
