@@ -4810,7 +4810,7 @@ dd {
   display: flex;
   align-items: center;
   gap: 13px;
-  padding: 15px 0;
+  padding: 10px 0;
 }
 .live-rank > div {
   flex: 1;
